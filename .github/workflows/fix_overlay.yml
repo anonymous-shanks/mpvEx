@@ -1,0 +1,65 @@
+name: Build & Fix 2x Overlay
+
+on:
+  push:
+    branches: [ "master" ]
+  schedule:
+    - cron: '0 4 * * *' # Roz subah 4 baje update check karega
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+
+      # Step 1: Original Developer se naya code lo
+      - name: Sync with Upstream
+        uses: aormsby/Fork-Sync-With-Upstream-action@v3.4
+        with:
+          target_sync_branch: master
+          target_repo_token: ${{ secrets.GITHUB_TOKEN }}
+          upstream_sync_repo: marlboro-advance/mpvEx
+          upstream_sync_branch: master
+          test_mode: false
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v3
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      # Step 2: Overlay ko Upar Bhejo (The Fix)
+      - name: Move Overlay to Top
+        run: |
+          echo "Hunting for center-aligned overlays..."
+          
+          # Hum 'app/src/main/res/layout' folder me saari XML files dhoondhenge
+          # Jo 'centerInParent' use kar rahi hain.
+          # mpvEx me usually ye files hoti hain: player_overlay.xml, overlay_speed.xml etc.
+          
+          find app/src/main/res/layout -name "*.xml" -print0 | xargs -0 grep -l 'android:layout_centerInParent="true"' | while read file; do
+              echo "Patching file: $file"
+              # Replace Center with Top
+              sed -i 's/android:layout_centerInParent="true"/android:layout_alignParentTop="true"/g' "$file"
+              # Thoda margin bhi dete hain taaki status bar se na chipke (50dp top margin)
+              sed -i 's/xmlns:android="http:\/\/schemas.android.com\/apk\/res\/android"/xmlns:android="http:\/\/schemas.android.com\/apk\/res\/android"\n    android:layout_marginTop="50dp"/g' "$file"
+          done
+          
+          echo "Patching Complete! Overlays moved to top."
+
+      - name: Grant Permission
+        run: chmod +x gradlew
+
+      - name: Build APK
+        run: ./gradlew assembleDebug
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: mpvEx-Fixed-Overlay
+          path: app/build/outputs/apk/debug/*.apk
