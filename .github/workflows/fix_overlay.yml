@@ -1,4 +1,4 @@
-name: Proven Build (Arm64 Only)
+name: Kotlin Overlay Fix
 
 on:
   push:
@@ -10,14 +10,13 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # 1. Checkout (Submodules ke saath - safety ke liye)
       - name: Checkout Code
         uses: actions/checkout@v3
         with:
           fetch-depth: 0
           submodules: recursive
 
-      # 2. Sync (Optional - Agar conflict ho to hata dena)
+      # 1. Sync
       - name: Sync with Upstream
         uses: aormsby/Fork-Sync-With-Upstream-action@v3.4
         with:
@@ -27,46 +26,70 @@ jobs:
           upstream_sync_branch: master
           test_mode: false
 
-      # 3. Setup Environment
+      # 2. Setup
       - name: Set up JDK 17
         uses: actions/setup-java@v3
         with:
           java-version: '17'
           distribution: 'temurin'
 
-      # 4. Hack Build Files (Ye wahi step hai jisne pichli baar build pass karaya tha)
+      # 3. Hack Build Files (Proven Method)
       - name: Hack Signing & Configs
         run: |
-          echo "Bypassing signing configs..."
-          # Signing config hata rahe hain
+          # Signing configs hatana
           find . -name "build.gradle*" -print0 | xargs -0 -r sed -i 's/signingConfig signingConfigs.release//g'
           find . -name "build.gradle*" -print0 | xargs -0 -r sed -i 's/signingConfig signingConfigs.debug//g'
           
-          # Keystore aur Google Services ka dummy banana
+          # Dummy Keystore & Google Services
           echo "keyAlias=androiddebugkey" > keystore.properties
           echo "storeFile=../debug.keystore" >> keystore.properties
           echo '{"project_info":{"project_number":"0","project_id":"d"},"client":[{"client_info":{"mobilesdk_app_id":"1:0:a:0","android_client_info":{"package_name":"com.dummy"}},"api_key":[{"current_key":"D"}]}]}' > app/google-services.json
 
-      # 5. OVERLAY PATCH (Center -> Top)
-      - name: Patch Overlay Position
+      # 4. KOTLIN PATCH (Sabse Important Step)
+      - name: Patch Kotlin Overlay
         run: |
-          echo "Moving Overlay to Top..."
-          # Layout files me center ko top se badal rahe hain
-          find app/src/main/res/layout -name "*.xml" -print0 | xargs -0 -r sed -i 's/android:layout_centerInParent="true"/android:layout_alignParentTop="true"/g'
+          echo "Hunting for the 2x Overlay in Kotlin files..."
           
-          # Margin add kar rahe hain (60dp)
-          find app/src/main/res/layout -name "*.xml" -print0 | xargs -0 -r sed -i 's/android:layout_alignParentTop="true"/android:layout_alignParentTop="true"\n    android:layout_marginTop="60dp"/g'
+          # Strategy: Wo file dhoondho jisme "2x" text likha ho (Case insensitive)
+          # mpvEx me ye usually 'SpeedOverlay.kt' ya 'PlayerUI.kt' jaisa kuch hota hai
+          
+          TARGET_FILE=$(grep -rnwl 'app/src/main/java' -e "2x" 2>/dev/null | head -n 1)
+          
+          if [ -z "$TARGET_FILE" ]; then
+             echo "Warning: '2x' text not found directly. Searching for 'Speed' related files..."
+             TARGET_FILE=$(grep -rnwl 'app/src/main/java' -e "Speed" | grep ".kt" | head -n 1)
+          fi
 
-      # 6. BUILD (Wahi command jisne 600MB build banaya tha)
+          if [ -n "$TARGET_FILE" ]; then
+            echo "Bingo! Found Overlay Logic in: $TARGET_FILE"
+            
+            # PATCH 1: Center -> TopCenter (Jetpack Compose)
+            # Alignment.Center ko TopCenter banayenge
+            sed -i 's/Alignment.Center/Alignment.TopCenter/g' "$TARGET_FILE"
+            
+            # PATCH 2: Gravity.CENTER -> Gravity.TOP (Legacy Views)
+            # Agar purana code hua toh Gravity use karega
+            sed -i 's/Gravity.CENTER/Gravity.TOP/g' "$TARGET_FILE"
+            
+            # PATCH 3: Add Padding (Taaki notch ke piche na jaye)
+            # Hum 'Modifier' dhoondh kar usme padding jod denge
+            sed -i 's/Modifier.align(Alignment.TopCenter)/Modifier.align(Alignment.TopCenter).padding(top = 60.dp)/g' "$TARGET_FILE"
+            
+            echo "Patch Applied Successfully!"
+            cat "$TARGET_FILE" | grep "Alignment" # Confirm karne ke liye print karega
+          else
+            echo "ERROR: Could not find the Overlay file. Build will continue but overlay might not move."
+          fi
+
+      # 5. Build Debug APK
       - name: Build Debug APK
         run: |
           chmod +x gradlew
           ./gradlew assembleDebug -x lint
 
-      # 7. UPLOAD (MAGIC STEP: Sirf Arm64 uthayega)
+      # 6. Upload Arm64 Only (Small Size)
       - name: Upload Arm64 APK
         uses: actions/upload-artifact@v4
         with:
-          name: mpvEx-Arm64-Final
-          # Ye filter hi size ko 600MB se 35MB kar dega
+          name: mpvEx-KotlinFixed
           path: app/build/outputs/apk/**/debug/*arm64-v8a*.apk
