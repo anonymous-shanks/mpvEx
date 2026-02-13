@@ -1,4 +1,4 @@
-name: Slim Build (Phone Only)
+name: Arm64 Fix Build
 
 on:
   push:
@@ -10,12 +10,13 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      # FIX 1: Submodules download karna zaroori hai MPV ke liye
       - name: Checkout Code
         uses: actions/checkout@v3
         with:
           fetch-depth: 0
+          submodules: recursive
 
-      # Step 1: Sync Code
       - name: Sync with Upstream
         uses: aormsby/Fork-Sync-With-Upstream-action@v3.4
         with:
@@ -25,52 +26,55 @@ jobs:
           upstream_sync_branch: master
           test_mode: false
 
-      # Step 2: Setup Environment
       - name: Set up JDK 17
         uses: actions/setup-java@v3
         with:
           java-version: '17'
           distribution: 'temurin'
-      
+
       - name: Setup Android NDK
         uses: android-actions/setup-android@v2
       
       - name: Install NDK
         run: sdkmanager "ndk;25.2.9519653" "cmake;3.22.1"
 
-      # Step 3: Hack Files (Taaki error na aaye)
-      - name: Hack Build Files
+      # FIX 2: Missing Files Create karna (Sabse bada crash reason)
+      - name: Create Dummy Configs
         run: |
-          # Signing Configs hatana
-          find . -name "build.gradle" -print0 | xargs -0 sed -i 's/signingConfig signingConfigs.release//g'
-          find . -name "build.gradle" -print0 | xargs -0 sed -i '/storeFile/d'
+          # 1. keystore.properties missing hoti hai, use fake banao
+          echo "keyAlias=androiddebugkey" > keystore.properties
+          echo "keyPassword=android" >> keystore.properties
+          echo "storePassword=android" >> keystore.properties
+          echo "storeFile=../debug.keystore" >> keystore.properties
           
-          # Dummy Google Services File
+          # 2. google-services.json dummy
           echo '{"project_info":{"project_number":"000000000000","project_id":"dummy-project"},"client":[{"client_info":{"mobilesdk_app_id":"1:000000000000:android:0000000000000000","android_client_info":{"package_name":"com.dummy.package"}},"api_key":[{"current_key":"DummyKey"}]}]}' > app/google-services.json
 
-      # Step 4: YOUR PATCH (2x Overlay Move to Top)
+      # FIX 3: Build.gradle se Signing Code Udao
+      - name: Hack Build Files
+        run: |
+          # Signing configs ko forcefully remove kar rahe hain
+          find . -name "build.gradle" -print0 | xargs -0 sed -i 's/signingConfig signingConfigs.release//g'
+          find . -name "build.gradle" -print0 | xargs -0 sed -i 's/signingConfig signingConfigs.debug//g'
+
+      # FIX 4: Overlay Patch (Tumhara Main Goal)
       - name: Patch Overlay Position
         run: |
           echo "Moving Overlay to Top..."
-          # Layout files me center ko top se badal rahe hain
           find app/src/main/res/layout -name "*.xml" -print0 | xargs -0 sed -i 's/android:layout_centerInParent="true"/android:layout_alignParentTop="true"/g'
-          
-          # Margin add kar rahe hain (60dp)
           find app/src/main/res/layout -name "*.xml" -print0 | xargs -0 sed -i 's/android:layout_alignParentTop="true"/android:layout_alignParentTop="true"\n    android:layout_marginTop="60dp"/g'
 
-      # Step 5: Make Gradlew Executable
-      - name: Permission Fix
+      - name: Make Executable
         run: chmod +x gradlew
 
-      # Step 6: BUILD ONLY STANDARD DEBUG (arm64)
-      # Hum specific flavor build karenge taaki size kam rahe
-      - name: Build Slim APK
-        run: ./gradlew assembleStandardDebug -x lint --stacktrace
+      # FIX 5: Build Command (Generic 'assembleDebug' use kar rahe hain jo safe hai)
+      - name: Build Debug APK
+        run: ./gradlew assembleDebug -x lint --stacktrace
 
-      # Step 7: Upload ONLY arm64 APK
-      - name: Upload APK
+      # FIX 6: Upload ONLY Arm64 (Size chhota rahega)
+      - name: Upload Arm64 APK
         uses: actions/upload-artifact@v4
         with:
-          name: mpvEx-Optimized-Build
-          # Sirf arm64-v8a wala APK uthayega (Most common for phones)
-          path: app/build/outputs/apk/standard/debug/*arm64-v8a*.apk
+          name: mpvEx-Arm64-Fixed
+          # Ye filter sirf arm64-v8a wali file uthayega
+          path: app/build/outputs/apk/**/debug/*arm64-v8a*.apk
