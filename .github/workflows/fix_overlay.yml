@@ -1,4 +1,4 @@
-name: Fixed Build & Patch
+name: Slim Build (Phone Only)
 
 on:
   push:
@@ -15,7 +15,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      # Step 1: Sync with Original Dev
+      # Step 1: Sync Code
       - name: Sync with Upstream
         uses: aormsby/Fork-Sync-With-Upstream-action@v3.4
         with:
@@ -25,45 +25,52 @@ jobs:
           upstream_sync_branch: master
           test_mode: false
 
-      # Step 2: Java 17 Setup
+      # Step 2: Setup Environment
       - name: Set up JDK 17
         uses: actions/setup-java@v3
         with:
           java-version: '17'
           distribution: 'temurin'
-          cache: gradle
-
-      # Step 3: NDK Setup (Bahut Important MPV ke liye)
+      
       - name: Setup Android NDK
         uses: android-actions/setup-android@v2
       
       - name: Install NDK
         run: sdkmanager "ndk;25.2.9519653" "cmake;3.22.1"
 
-      # Step 4: Fix Overlay (Safe Mode)
+      # Step 3: Hack Files (Taaki error na aaye)
+      - name: Hack Build Files
+        run: |
+          # Signing Configs hatana
+          find . -name "build.gradle" -print0 | xargs -0 sed -i 's/signingConfig signingConfigs.release//g'
+          find . -name "build.gradle" -print0 | xargs -0 sed -i '/storeFile/d'
+          
+          # Dummy Google Services File
+          echo '{"project_info":{"project_number":"000000000000","project_id":"dummy-project"},"client":[{"client_info":{"mobilesdk_app_id":"1:000000000000:android:0000000000000000","android_client_info":{"package_name":"com.dummy.package"}},"api_key":[{"current_key":"DummyKey"}]}]}' > app/google-services.json
+
+      # Step 4: YOUR PATCH (2x Overlay Move to Top)
       - name: Patch Overlay Position
         run: |
-          echo "Patching layout files..."
+          echo "Moving Overlay to Top..."
           # Layout files me center ko top se badal rahe hain
           find app/src/main/res/layout -name "*.xml" -print0 | xargs -0 sed -i 's/android:layout_centerInParent="true"/android:layout_alignParentTop="true"/g'
           
-          # Thoda margin add kar rahe hain taaki notch ke piche na chhupe
+          # Margin add kar rahe hain (60dp)
           find app/src/main/res/layout -name "*.xml" -print0 | xargs -0 sed -i 's/android:layout_alignParentTop="true"/android:layout_alignParentTop="true"\n    android:layout_marginTop="60dp"/g'
-          
-          echo "Patch Done."
 
-      # Step 5: Build APK (Errors ignore karke)
-      - name: Build APK
-        run: |
-          chmod +x gradlew
-          # -x lint ka matlab hai warnings par build mat roko
-          ./gradlew assembleDebug -x lint --stacktrace
+      # Step 5: Make Gradlew Executable
+      - name: Permission Fix
+        run: chmod +x gradlew
 
-      # Step 6: Find and Upload APK (Magic Step)
+      # Step 6: BUILD ONLY STANDARD DEBUG (arm64)
+      # Hum specific flavor build karenge taaki size kam rahe
+      - name: Build Slim APK
+        run: ./gradlew assembleStandardDebug -x lint --stacktrace
+
+      # Step 7: Upload ONLY arm64 APK
       - name: Upload APK
-        if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: mpvEx-Fixed
-          # Ye line kisi bhi folder se APK dhoondh legi
-          path: '**/*.apk'
+          name: mpvEx-Optimized-Build
+          # Sirf arm64-v8a wala APK uthayega (Most common for phones)
+          path: app/build/outputs/apk/standard/debug/*arm64-v8a*.apk
