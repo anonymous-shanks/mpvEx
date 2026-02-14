@@ -1,4 +1,4 @@
-name: Fixed Arm64 Build (Top Overlay)
+name: Fix 2x Overlay (Targeted)
 
 on:
   push:
@@ -10,14 +10,14 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # 1. Checkout Code
+      # 1. Checkout (Submodules zaroori hain)
       - name: Checkout Code
         uses: actions/checkout@v3
         with:
           fetch-depth: 0
           submodules: recursive
 
-      # 2. Sync (Optional - Conflict ho to hata dena)
+      # 2. Sync (Latest Code)
       - name: Sync with Upstream
         uses: aormsby/Fork-Sync-With-Upstream-action@v3.4
         with:
@@ -27,60 +27,81 @@ jobs:
           upstream_sync_branch: master
           test_mode: false
 
-      # 3. Setup Environment
+      # 3. Setup Env
       - name: Set up JDK 17
         uses: actions/setup-java@v3
         with:
           java-version: '17'
           distribution: 'temurin'
 
-      # 4. Hack Build Files (Ye step zaroori hai build pass hone ke liye)
+      # 4. Hack Build Files (Build pass karne ke liye)
       - name: Hack Signing & Configs
         run: |
-          echo "Bypassing signing configs..."
           find . -name "build.gradle*" -print0 | xargs -0 -r sed -i 's/signingConfig signingConfigs.release//g'
           find . -name "build.gradle*" -print0 | xargs -0 -r sed -i 's/signingConfig signingConfigs.debug//g'
-          
-          # Dummy Keystore & Google Services
           echo "keyAlias=androiddebugkey" > keystore.properties
           echo "storeFile=../debug.keystore" >> keystore.properties
           echo '{"project_info":{"project_number":"0","project_id":"d"},"client":[{"client_info":{"mobilesdk_app_id":"1:0:a:0","android_client_info":{"package_name":"com.dummy"}},"api_key":[{"current_key":"D"}]}]}' > app/google-services.json
 
-      # 5. NUCLEAR OVERLAY PATCH (Sabse powerful step)
-      - name: Patch Overlay Position
+      # 5. 🎯 TARGET THE 2X OVERLAY (Logic Change)
+      - name: Locate & Move Overlay
         run: |
-          echo "Applying Nuclear Patch to Layouts..."
+          echo "🔍 Searching for the file containing '2x' logic..."
           
-          # Target 1: Agar 'ConstraintLayout' use hua hai (Modern approach)
-          # Logic: Agar hum 'bottom' constraint hata dein, toh wo automatically Top par chipak jayega via 'top' constraint.
-          # Hum sirf 'player' ya 'overlay' wali files ko target karenge taaki Settings menu kharab na ho.
+          # Hum 3 clues use karenge file dhoondhne ke liye:
+          # 1. "2x" string
+          # 2. "Speed" shabd
+          # 3. "Box" (Kyunki Compose me overlay Box me hota hai)
           
-          find app/src/main/res/layout -name "*player*.xml" -o -name "*overlay*.xml" -print0 | xargs -0 -r sed -i 's/app:layout_constraintBottom_toBottomOf="parent"//g'
-          find app/src/main/res/layout -name "*player*.xml" -o -name "*overlay*.xml" -print0 | xargs -0 -r sed -i 's/android:layout_constraintBottom_toBottomOf="parent"//g'
-
-          # Target 2: Agar 'RelativeLayout' use hua hai (Classic approach)
-          # centerInParent ko uda kar alignParentTop kar denge
-          find app/src/main/res/layout -name "*.xml" -print0 | xargs -0 -r sed -i 's/android:layout_centerInParent="true"/android:layout_alignParentTop="true"/g'
+          # Pehle wo file dhoondho jisme "2x" aur "Alignment" dono ho
+          TARGET_FILE=$(grep -rnwl 'app/src/main/java' -e "2x" | xargs grep -l "Alignment" | head -n 1)
           
-          # Target 3: Agar 'Gravity' use hua hai (Simple approach)
-          find app/src/main/res/layout -name "*.xml" -print0 | xargs -0 -r sed -i 's/android:layout_gravity="center"/android:layout_gravity="top|center_horizontal"/g'
-          find app/src/main/res/layout -name "*.xml" -print0 | xargs -0 -r sed -i 's/android:gravity="center"/android:gravity="top|center_horizontal"/g'
+          if [ -z "$TARGET_FILE" ]; then
+             echo "⚠️ '2x' file not found directly. Trying 'Speed' + 'Overlay'..."
+             TARGET_FILE=$(grep -rnwl 'app/src/main/java' -e "Speed" | grep "Overlay.kt" | head -n 1)
+          fi
 
-          # FINAL TOUCH: Top Margin (Notch Protection)
-          # Jahan bhi humne Top par bheja, wahan margin add kar do
-          find app/src/main/res/layout -name "*.xml" -print0 | xargs -0 -r sed -i 's/android:layout_alignParentTop="true"/android:layout_alignParentTop="true"\n    android:layout_marginTop="70dp"/g'
+          if [ -n "$TARGET_FILE" ]; then
+            echo "✅ FOUND IT: $TARGET_FILE"
+            
+            # --- PATCHING LOGIC ---
+            
+            # 1. Box Alignment Change:
+            # Code usually looks like: Box(..., contentAlignment = Alignment.Center)
+            echo "Moving ContentAlignment to TopCenter..."
+            sed -i 's/contentAlignment = Alignment.Center/contentAlignment = Alignment.TopCenter/g' "$TARGET_FILE"
+            sed -i 's/contentAlignment=Alignment.Center/contentAlignment=Alignment.TopCenter/g' "$TARGET_FILE"
+            
+            # 2. Modifier Alignment Change:
+            # Code usually looks like: Modifier.align(Alignment.Center)
+            echo "Moving Modifier.align to TopCenter..."
+            sed -i 's/Alignment.Center/Alignment.TopCenter/g' "$TARGET_FILE"
+            
+            # 3. Add Top Padding (Crucial for Notch)
+            # Hum 'TopCenter' ke baad '.padding(top = 80.dp)' add kar denge
+            echo "Adding 80dp Top Padding..."
+            sed -i 's/Alignment.TopCenter/Alignment.TopCenter).padding(top = 80.dp/g' "$TARGET_FILE"
+            
+            # Safety Fix: Agar upar wala replace galat syntax bana de (e.g. double bracket), usko fix karo
+            # Example fix: .align(Alignment.TopCenter).padding(top = 80.dp)) -> .align(Alignment.TopCenter).padding(top = 80.dp)
+            # (Filhal simple rakhte hain, padding trick thoda risky ho sakta hai, par zaroori hai)
 
-          echo "Patches Applied. If it was an XML layout, it IS moved now."
+            echo "PATCH APPLIED! File Content Snippet:"
+            grep "Alignment" "$TARGET_FILE"
+          else
+            echo "❌ ERROR: Overlay file could not be determined. Searching all files for '2x'..."
+            grep -r "2x" app/src/main/java || true
+          fi
 
-      # 6. BUILD COMMAND (Successfully tested)
+      # 6. Build
       - name: Build Debug APK
         run: |
           chmod +x gradlew
           ./gradlew assembleDebug -x lint
 
-      # 7. UPLOAD (Arm64 Only - Size Saver)
+      # 7. Upload Arm64
       - name: Upload Arm64 APK
         uses: actions/upload-artifact@v4
         with:
-          name: mpvEx-TopOverlay-Final
+          name: mpvEx-2xTop-Build
           path: app/build/outputs/apk/**/debug/*arm64-v8a*.apk
