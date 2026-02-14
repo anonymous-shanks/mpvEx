@@ -1,4 +1,4 @@
-name: Structure Patch (Fix 2x Overlay)
+name: Standard Build (Top Overlay)
 
 on:
   push:
@@ -10,12 +10,14 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      # 1. Checkout Code (With Submodules for MPV)
       - name: Checkout Code
         uses: actions/checkout@v3
         with:
           fetch-depth: 0
           submodules: recursive
 
+      # 2. Sync with Original Dev (Latest Updates Lene Ke Liye)
       - name: Sync with Upstream
         uses: aormsby/Fork-Sync-With-Upstream-action@v3.4
         with:
@@ -25,75 +27,64 @@ jobs:
           upstream_sync_branch: master
           test_mode: false
 
+      # 3. Setup Java & NDK
       - name: Set up JDK 17
         uses: actions/setup-java@v3
         with:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: Hack Build Files
+      # 4. Hack Build Files (Signing Remove Karna - Zaroori Hai)
+      - name: Hack Signing & Configs
         run: |
+          echo "Removing Signing Configs..."
           find . -name "build.gradle*" -print0 | xargs -0 -r sed -i 's/signingConfig signingConfigs.release//g'
           find . -name "build.gradle*" -print0 | xargs -0 -r sed -i 's/signingConfig signingConfigs.debug//g'
+          
+          # Dummy Keystore & Google Services (Crash Fix)
           echo "keyAlias=androiddebugkey" > keystore.properties
           echo "storeFile=../debug.keystore" >> keystore.properties
           echo '{"project_info":{"project_number":"0","project_id":"d"},"client":[{"client_info":{"mobilesdk_app_id":"1:0:a:0","android_client_info":{"package_name":"com.dummy"}},"api_key":[{"current_key":"D"}]}]}' > app/google-services.json
 
-      # ---------------------------------------------------------
-      # 🎯 NEW LOGIC: Dhoondho 'Alignment.Center' + 'Speed'
-      # ---------------------------------------------------------
-      - name: Find and Patch Overlay by Logic
+      # 5. SAFE OVERLAY PATCH (Center -> TopCenter)
+      # Note: Hum padding add nahi kar rahe taaki syntax error na aaye.
+      - name: Patch Overlay Position
         run: |
-          echo "🔍 Searching for UI files with Centered Speed logic..."
+          echo "🔍 Searching for Speed/Gesture Overlay files..."
           
-          # 1. Sabse pehle wo saari files list karo jo UI folder me hain aur 'Alignment.Center' use kar rahi hain
-          # (mpvEx ka UI folder usually 'app/src/main/java/app/marlboroadvance/mpvex/ui' hota hai)
+          # Hum un files ko target karenge jisme "Speed", "Gesture" ya "Overlay" likha ho
+          # Aur jisme "Alignment.Center" use ho raha ho.
           
-          echo "Scanning UI files..."
-          grep -lR "Alignment.Center" app/src/main/java | xargs grep -l "speed" > matches.txt || true
+          grep -lR "Alignment.Center" app/src/main/java | grep -E "Speed|Gesture|Overlay" > targets.txt || true
           
-          # Agar 'speed' se nahi mila, toh 'gesture' try karo (kyunki 2x gesture se aata hai)
-          if [ ! -s matches.txt ]; then
-             echo "⚠️ No 'speed' files found. Trying 'gesture'..."
-             grep -lR "Alignment.Center" app/src/main/java | xargs grep -l "gesture" > matches.txt || true
-          fi
-
-          if [ -s matches.txt ]; then
-            echo "✅ FOUND CANDIDATE FILES:"
-            cat matches.txt
-            
-            # Ab inn sabhi files me Alignment.Center ko TopCenter bana do
-            # (Thoda risky hai par yahi ek raasta hai bina code dekhe)
+          if [ -s targets.txt ]; then
+            echo "✅ Target Files Found:"
+            cat targets.txt
             
             while IFS= read -r file; do
-              echo "🔧 Patching: $file"
-              
-              # Replace Center with TopCenter
+              echo "🔧 Moving Alignment to Top in: $file"
+              # Sirf Alignment change kar rahe hain. No Padding = No Syntax Error.
               sed -i 's/Alignment.Center/Alignment.TopCenter/g' "$file"
-              
-              # Add Padding (80dp)
-              # Logic: Jahan TopCenter hua, wahan .padding(top = 80.dp) ghusa do
-              sed -i 's/Alignment.TopCenter/Alignment.TopCenter).padding(top = 80.dp/g' "$file"
-              
-              # Fix potential double bracket syntax error from previous command
-              sed -i 's/Alignment.TopCenter).padding(top = 80.dp))/Alignment.TopCenter).padding(top = 80.dp)/g' "$file"
-              
-            done < matches.txt
+            done < targets.txt
             
-            echo "🎉 PATCH APPLIED via Structure Logic!"
+            echo "🎉 Patch Applied Successfully!"
           else
-            echo "❌ STILL NOT FOUND. Listing all files in UI folder to debug..."
-            find app/src/main/java -name "*Overlay*"
-            find app/src/main/java -name "*Controls*"
+            echo "⚠️ Specific files not found. Trying broad search for GestureHandler..."
+            # Fallback: Agar file name match na kare, to GestureHandler ko direct target karo
+            find app/src/main/java -name "*GestureHandler*" -exec sed -i 's/Alignment.Center/Alignment.TopCenter/g' {} +
           fi
 
-      - name: Build Debug APK
+      # 6. BUILD STANDARD VERSION (Non F-Droid)
+      # 'assembleStandardDebug' sirf Normal version banayega
+      - name: Build Standard Debug APK
         run: |
           chmod +x gradlew
-          ./gradlew assembleDebug -x lint
+          ./gradlew assembleStandardDebug -x lint
 
-      - name: Upload Arm64 APK
+      # 7. UPLOAD (Arm64 Only - Small Size)
+      - name: Upload Standard Arm64 APK
         uses: actions/upload-artifact@v4
         with:
-          name: mpvEx-StructurePatch-Build
-          path: app/build/outputs/apk/**/debug/*arm64-v8a*.apk
+          name: mpvEx-Standard-TopOverlay
+          # Path me 'standard' folder include kiya hai taaki F-Droid wala na uthaye
+          path: app/build/outputs/apk/standard/debug/*arm64-v8a*.apk
