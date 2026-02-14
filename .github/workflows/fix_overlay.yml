@@ -1,12 +1,10 @@
-name: Spy & Fix (Guaranteed Hunt)
+name: Find The Damn File
 
 on:
-  push:
-    branches: [ "master" ]
-  workflow_dispatch:
+  workflow_dispatch: # Manual run only
 
 jobs:
-  build:
+  search:
     runs-on: ubuntu-latest
 
     steps:
@@ -14,77 +12,32 @@ jobs:
         uses: actions/checkout@v3
         with:
           fetch-depth: 0
-          submodules: recursive
 
-      - name: Sync with Upstream
-        uses: aormsby/Fork-Sync-With-Upstream-action@v3.4
-        with:
-          target_sync_branch: master
-          target_repo_token: ${{ secrets.GITHUB_TOKEN }}
-          upstream_sync_repo: marlboro-advance/mpvEx
-          upstream_sync_branch: master
-          test_mode: false
-
-      - name: Set up JDK 17
-        uses: actions/setup-java@v3
-        with:
-          java-version: '17'
-          distribution: 'temurin'
-
-      - name: Hack Build Files
+      - name: 🔍 SEARCH FOR FILE
         run: |
-          find . -name "build.gradle*" -print0 | xargs -0 -r sed -i 's/signingConfig signingConfigs.release//g'
-          find . -name "build.gradle*" -print0 | xargs -0 -r sed -i 's/signingConfig signingConfigs.debug//g'
-          echo "keyAlias=androiddebugkey" > keystore.properties
-          echo "storeFile=../debug.keystore" >> keystore.properties
-          echo '{"project_info":{"project_number":"0","project_id":"d"},"client":[{"client_info":{"mobilesdk_app_id":"1:0:a:0","android_client_info":{"package_name":"com.dummy"}},"api_key":[{"current_key":"D"}]}]}' > app/google-services.json
+          echo "============================================"
+          echo "1. LISTING ALL KOTLIN FILES IN UI FOLDER"
+          echo "============================================"
+          # Finds all Kotlin files in the UI directory to see the structure
+          find app/src/main/java -name "*.kt" | grep "ui"
 
-      # ---------------------------------------------------------
-      # 🕵️ JASOOS MODE: Dhoondho aur Saboot do
-      # ---------------------------------------------------------
-      - name: Hunt & Patch Overlay
-        run: |
-          echo "🔍 Starting Manhunt for Overlay File..."
-          
-          # Logic: Wo file dhoondho jo UI folder me ho aur 'Alignment.Center' use kare
-          # Filter: Us file me 'Speed', 'Gesture', ya 'Overlay' hona chahiye
-          
-          grep -lR "Alignment.Center" app/src/main/java | grep -E "Speed|Gesture|Overlay|Player" > suspects.txt || true
-          
-          echo "📋 Suspect Files Found:"
-          cat suspects.txt
-          
-          # Ab har suspect file ko check karenge
-          while IFS= read -r file; do
-              # Agar file me "Box" ya "Surface" hai (Compose UI), toh ye pakka wahi hai
-              if grep -qE "Box|Surface" "$file"; then
-                  echo "🎯 TARGET LOCKED: $file"
-                  
-                  # BEFORE PATCH (Log dikhao taaki hum confirm kar sakein)
-                  echo "--- Code Before Patch ---"
-                  grep -C 2 "Alignment.Center" "$file"
-                  
-                  # APPLY PATCH: Move to Top
-                  sed -i 's/Alignment.Center/Alignment.TopCenter/g' "$file"
-                  sed -i 's/contentAlignment = Center/contentAlignment = TopCenter/g' "$file"
-                  
-                  # AFTER PATCH (Saboot)
-                  echo "--- Code After Patch ---"
-                  grep -C 2 "Alignment.TopCenter" "$file"
-              fi
-          done < suspects.txt
-          
-          echo "✅ Patching Process Complete."
+          echo ""
+          echo "============================================"
+          echo "2. SEARCHING FOR 'RoundedCornerShape' (The Squircle)"
+          echo "============================================"
+          # This will show which file contains the RoundedCornerShape code
+          grep -rn "RoundedCornerShape" app/src/main/java
 
-      # ---------------------------------------------------------
+          echo ""
+          echo "============================================"
+          echo "3. SEARCHING FOR '2x' or 'Speed' + 'Alignment'"
+          echo "============================================"
+          # Looks for files that have both 'Speed' and 'Alignment' in them
+          grep -rn "Speed" app/src/main/java | grep "Alignment"
 
-      - name: Build Standard Debug APK
-        run: |
-          chmod +x gradlew
-          ./gradlew assembleStandardDebug -x lint
-
-      - name: Upload APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: mpvEx-SpyBuild
-          path: app/build/outputs/apk/standard/debug/*arm64-v8a*.apk
+          echo ""
+          echo "============================================"
+          echo "4. SEARCHING FOR 'Box' + 'Alignment.Center'"
+          echo "============================================"
+          # Common pattern for overlays
+          grep -rn "Alignment.Center" app/src/main/java | grep "Box"
